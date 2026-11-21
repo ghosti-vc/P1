@@ -1,9 +1,9 @@
 {
-  "id": "sololatino",
-  "name": "SoloLatino",
-  "description": "Películas, series, anime y doramas en Latino desde SoloLatino, rápido y en una sola fuente.",
+  "id": "pelis-tv",
+  "name": "PelisTV",
+  "description": "Películas, series, anime y series turcas en español desde muchas fuentes.",
   "author": "Ghosti-vc",
-  "version": "0.1.0",
+  "version": "0.8.2",
   "apiVersion": 9,
   "entry": "plugin.js",
   "capabilities": [
@@ -14,11 +14,20 @@
     "resolve"
   ],
   "hosts": [
-    "sololatino.net",
+    "pelisjuanita.org",
+    "www.pelisjuanita.org",
+    "hackstore3.net",
+    "pelisflix200.store",
     "image.tmdb.org",
-    "player.pelisserieshoy.com",
-    "pelisserieshoy.com",
-    "embed69.org"
+    "www.poseidonhd2.co",
+    "player.poseidonhd2.co",
+    "wv3.cuevana3.eu",
+    "www.pelisplushd.la",
+    "www.cinecalidad.am",
+    "www3.seriesmetro.net",
+    "tbg.seriesturcastv.to",
+    "seriesflixhd.lol",
+    "pelisflixhd.win"
   ],
   "browser": true,
   "fetchHosts": "any",
