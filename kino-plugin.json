@@ -1,13 +1,25 @@
 {
-  "id": "pelis-max",
-  "name": "PelisMAX",
-  "description": "Películas, series y anime en español (Latino primero) desde PelisGO, Reypelis, Pelis182, OnlyPelis y Cinelandia en un solo lugar.",
+  "id": "sololatino",
+  "name": "SoloLatino",
+  "description": "Películas, series, anime y doramas en Latino desde SoloLatino, rápido y en una sola fuente.",
   "author": "Ghosti-vc",
-  "version": "0.1.20",
+  "version": "0.1.0",
   "apiVersion": 9,
   "entry": "plugin.js",
-  "capabilities": ["home", "browse", "search", "episodes", "resolve"],
-  "hosts": ["pelisgo.online", "reypelis.net", "pelis182.net", "onlypelis.com", "cinelandia.lat", "www.cinelandia.lat", "pelispedia.is", "image.tmdb.org", "paulinito.com"],
+  "capabilities": [
+    "home",
+    "browse",
+    "search",
+    "episodes",
+    "resolve"
+  ],
+  "hosts": [
+    "sololatino.net",
+    "image.tmdb.org",
+    "player.pelisserieshoy.com",
+    "pelisserieshoy.com",
+    "embed69.org"
+  ],
   "browser": true,
   "fetchHosts": "any",
   "streamHosts": "any"
