@@ -1,13 +1,14 @@
 {
   "id": "kimera",
   "name": "Kimera",
-  "version": "0.1.15",
-  "apiVersion": 6,
+  "version": "0.1.16",
+  "apiVersion": 13,
   "entry": "plugin.js",
   "author": "ghosti-vc",
   "description": "Películas y series de Kimera: estrenos, lo más visto y lo último agregado, con audio latino e inglés.",
   "color": "#1c1f24",
   "categories": ["movies", "series"],
   "hosts": ["kimeraweb.com", "cloudcdn.sbs"],
-  "capabilities": ["home", "browse", "search", "episodes", "resolve", "download"]
+  "streamHosts": "any",
+  "capabilities": ["home", "browse", "search", "episodes", "resolve", "download", "byteSource"]
 }
