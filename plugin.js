@@ -1006,8 +1006,8 @@ function genreParts(slug) {
   return [(n) => opPage(n, "/genero/" + slug + "/"), (n) => ryPath("/category/" + slug + "/", n), (n) => pePath("/category/" + slug + "/", n), (n) => pgGenre(slug, n)];
 }
 const SECTIONS = {
-  peliculas: { genre: "peliculas", parts: [(n) => pgPage("movie", n), (n) => ryPage("movie", n), (n) => opPage(n), (n) => pePage("movie", n), (n) => acPage("movies", n)] },
-  series: { genre: "series", parts: [(n) => pgPage("serie", n), (n) => ryPage("serie", n), (n) => pePage("series", n), (n) => acPage("tvshows", n)] },
+  peliculas: { genre: "peliculas", parts: [(n) => pgPage("movie", n), (n) => opPage(n), (n) => pePage("movie", n), (n) => acPage("movies", n), (n) => ryPage("movie", n)] },
+  series: { genre: "series", parts: [(n) => pgPage("serie", n), (n) => pePage("series", n), (n) => acPage("tvshows", n), (n) => ryPage("serie", n)] },
   anime: { genre: "series", parts: [(n) => pePage("anime", n)] },
   estrenos: { genre: "peliculas", parts: [(n) => opPage(n, "/estreno/2026/"), (n) => pgPage("movie", n)] },
   tendencias: { genre: "peliculas", parts: [(n) => peTrend(n), (n) => pgPage("movie", n)] },
@@ -1020,7 +1020,7 @@ const SECTIONS = {
   disney: { genre: "peliculas", parts: [(n) => ryPath("/category/disney/", n), (n) => pePath("/category/disney/", n), (n) => ryPath("/category/pixar/", n)] },
   superheroes: { genre: "peliculas", parts: [(n) => ryPath("/category/superheroes/", n), (n) => pePath("/category/superheroes/", n)] },
 };
-const SRC_PRIO = { pg: 0, ry: 1, pe: 2, op: 3, ac: 4 };
+const SRC_PRIO = { pg: 0, pe: 1, op: 2, ac: 3, ry: 9 };
 
 function normTitle(t) {
   return String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\(\d{4}\)/g, "").replace(/[^a-z0-9]+/g, "");
@@ -1168,14 +1168,34 @@ function acItem(o) {
   return mkItem("ac", type === "movies" ? "movie" : "series", id, title, acImg(o), yr && yr[0]);
 }
 async function acSearch(q, postType) {
-  const d = await acJson("/search?query=" + enc(q) + "&post_type=" + (postType || "movies,tvshows,animes"));
-  const out = (((d && d.data && d.data.posts) || []).map(acItem)).filter(Boolean);
-  log("ac: búsqueda '" + String(q).slice(0, 30) + "' -> " + out.length);
+  const types = "&post_type=" + (postType || "movies%2Ctvshows%2Canimes");
+  const run = async (w) => {
+    const d = await acJson("/search?query=" + enc(w) + "&page=1" + types + "&posts_per_page=16");
+    return (((d && d.data && d.data.posts) || []).map(acItem)).filter(Boolean);
+  };
+  let out = await run(q);
+  const want = normTitle(q);
+  const words = String(q).split(/\s+/).filter((w) => w.length > 3).sort((x, y) => y.length - x.length);
+  // La búsqueda del sitio a veces falla con varias palabras: se reintenta con la palabra más larga.
+  if (words.length && want.length > 4 && !out.some((it) => normTitle(it.title).indexOf(want) >= 0)) {
+    try { const more = await run(words[0]); const seen = new Set(out.map((x) => x.id)); more.forEach((x) => { if (!seen.has(x.id)) out.push(x); }); } catch (e) { /* nada */ }
+  }
+  if (want.length > 4 && out.some((it) => normTitle(it.title).indexOf(want) >= 0)) out = out.filter((it) => normTitle(it.title).indexOf(want) >= 0);
+  log("ac: búsqueda '" + String(q).slice(0, 30) + "' -> " + out.length + (out[0] ? " (" + String(out[0].title).slice(0, 30) + ")" : ""));
   return out;
 }
 // El sitio no publica un listado conocido: el catálogo se arma buscando por año (como en el plugin FanPelis).
+const acCache = new Map();
 async function acPage(postType, n) {
   if (n > 1) return { items: [], hasNext: false };
+  const hit = acCache.get(postType);
+  if (hit && Date.now() - hit.t < 5 * 60 * 1000) return hit.p;
+  const p = acPageGo(postType);
+  acCache.set(postType, { t: Date.now(), p });
+  p.catch(() => { acCache.delete(postType); });
+  return p;
+}
+async function acPageGo(postType) {
   const res = await Promise.allSettled([2026, 2025, 2024].map((y) => acSearch(String(y), postType)));
   const seen = new Set();
   const items = [];
@@ -1214,7 +1234,7 @@ async function acCandidates(spec) {
 }
 
 async function searchAll(qa, ms) {
-  const jobs = [["pg", pgSearch], ["ry", rySearch], ["pe", peSearch], ["op", opSearch], ["ac", (q) => acSearch(q)]].filter(([n]) => !(deadUntil[n] > Date.now()));
+  const jobs = [["pg", pgSearch], ["pe", peSearch], ["op", opSearch], ["ac", (q) => acSearch(q)], ["ry", rySearch]].filter(([n]) => !(deadUntil[n] > Date.now()));
   const res = await Promise.allSettled(jobs.map(([, f]) => withTimeout(f(qa), Math.min(ms || 9000, 7000))));
   const all = [];
   res.forEach((r, i) => {
