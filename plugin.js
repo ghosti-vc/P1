@@ -6,7 +6,13 @@ const BASE = "https://kimeraweb.com";
 const CDN = "https://cloudcdn.sbs";
 const TYPES = "movies|series|dramas|animes|donghuas|shorts";
 const AS_SERIES = new Set(["series", "dramas", "animes", "donghuas", "shorts"]);
-const LINK = new RegExp('<a\\s[^>]*href="https:\\/\\/kimeraweb\\.com\\/(' + TYPES + ')\\/([^"]+)"', "gi");
+const HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36",
+  Accept: "text/html,application/xhtml+xml",
+  "Accept-Language": "es-CO,es;q=0.9",
+};
+const LINK = new RegExp('(?:href|data-href)="(?:https?:\\/\\/kimeraweb\\.com)?\\/(' + TYPES + ')\\/([^"]+)"', "gi");
+const BARE = new RegExp('\\/(' + TYPES + ')\\/([a-z0-9][a-z0-9-]*-\\d+)', "gi");
 
 function log(...args) {
   try {
@@ -14,6 +20,12 @@ function log(...args) {
   } catch {
     // la línea se pierde, el resultado no
   }
+}
+
+async function body(answer) {
+  if (typeof answer.text === "function") return await answer.text();
+  if (typeof answer.json === "function") return JSON.stringify(await answer.json());
+  return "";
 }
 
 function decode(value) {
@@ -39,7 +51,8 @@ function attr(attrs, name) {
 }
 
 function https(value) {
-  const url = String(value || "");
+  let url = String(value || "");
+  if (url.startsWith("/")) url = CDN + url;
   return url.startsWith(CDN + "/") ? url : undefined;
 }
 
@@ -63,14 +76,20 @@ function splitRef(ref) {
   return [ref.slice(0, at), ref.slice(at + 1)];
 }
 
-// Cada enlace a una ficha es una tarjeta: su portada y su título se buscan en la ventana que
-// llega hasta el enlace siguiente, así que el orden del HTML no importa.
+// Cada aparición de una ficha es una tarjeta: su portada y su título se buscan en la ventana que
+// llega hasta la aparición siguiente, así que el orden del HTML no importa. Si no hay enlaces
+// completos se buscan rutas sueltas.
 function cards(html) {
   const out = [];
-  const links = [];
-  LINK.lastIndex = 0;
+  let links = [];
   let match;
+  LINK.lastIndex = 0;
   while ((match = LINK.exec(html))) links.push({ type: match[1].toLowerCase(), full: match[2], end: match.index + match[0].length });
+  if (!links.length) {
+    BARE.lastIndex = 0;
+    while ((match = BARE.exec(html))) links.push({ type: match[1].toLowerCase(), full: match[2], end: match.index + match[0].length });
+  }
+  links = links.map((link, i) => ({ ...link, i })).sort((a, b) => a.end - b.end || a.i - b.i);
   for (let i = 0; i < links.length; i++) {
     const link = links[i];
     const path = link.full.split("/")[0];
@@ -82,7 +101,7 @@ function cards(html) {
     const image = /<img([^>]*)>/i.exec(window);
     let poster = image ? https(attr(image[1], "data-src")) || https(attr(image[1], "src")) : undefined;
     if (!poster) {
-      const background = /url\((['"]?)(https:\/\/cloudcdn\.sbs\/[^)'"]+)\1\)/i.exec(window);
+      const background = /url\((['"]?)(https?:\/\/[^)'"]+)\1\)/i.exec(window);
       if (background) poster = https(background[2]);
     }
     let title = image ? decode(attr(image[1], "alt")) : "";
@@ -91,7 +110,7 @@ function cards(html) {
       if (caption) title = text(caption[1]);
     }
     if (!title) {
-      const twin = new RegExp('<a\\s[^>]*href="[^"]*' + escapeRegExp(path) + '"[^>]*>([\\s\\S]{1,200}?)<\\/a>', "i").exec(wide);
+      const twin = new RegExp('(?:href|data-href)="[^"]*' + escapeRegExp(path) + '"[^>]*>([\\s\\S]{1,200}?)<\\/a>', "i").exec(wide);
       if (twin) title = text(twin[1]);
     }
     title = title.replace(/\s+/g, " ").trim().slice(0, 200);
@@ -142,9 +161,9 @@ const ROWS = [
 ];
 
 export async function home() {
-  const answer = await kino.fetch(BASE + "/");
+  const answer = await kino.fetch(BASE + "/", { headers: HEADERS });
   if (!answer.ok) throw kino.error("unavailable", "inicio " + answer.status);
-  const html = answer.text();
+  const html = await body(answer);
   const found = sections(html);
   const rows = [];
   for (const row of ROWS) {
@@ -157,16 +176,19 @@ export async function home() {
     const items = collect(html);
     if (items.length) rows.push({ id: "todo", title: "Kimera", items });
   }
-  if (!rows.length) throw kino.error("unavailable", "inicio sin filas");
+  if (!rows.length) {
+    const head = html.slice(0, 110).replace(/\s+/g, " ");
+    throw kino.error("unavailable", "vacio len=" + html.length + " h2=" + found.length + " " + head);
+  }
   return rows;
 }
 
 async function seriesInfo(id, path) {
   const info = { title: "", poster: undefined };
   try {
-    const answer = await kino.fetch(BASE + path);
+    const answer = await kino.fetch(BASE + path, { headers: HEADERS });
     if (answer.ok) {
-      const data = json(answer.text(), "title-data");
+      const data = json(await body(answer), "title-data");
       if (data) {
         info.title = decode(data.name).slice(0, 200);
         info.poster = https(data.cover_url);
@@ -185,9 +207,9 @@ export async function episodes(ref) {
   const series = await seriesInfo(id, path);
   const episodes = [];
   for (let page = 1; page <= 20; page++) {
-    const answer = await kino.fetch(BASE + "/api/titles/" + encodeURIComponent(id) + "/content?sort=asc&page=" + page);
+    const answer = await kino.fetch(BASE + "/api/titles/" + encodeURIComponent(id) + "/content?sort=asc&page=" + page, { headers: HEADERS });
     if (!answer.ok) break;
-    const data = answer.json();
+    const data = JSON.parse(await body(answer));
     for (const season of data.seasons || []) {
       const number = Number(season.number) || 1;
       for (const item of season.items || []) {
@@ -209,9 +231,9 @@ export async function episodes(ref) {
 }
 
 async function firstEpisode(id) {
-  const answer = await kino.fetch(BASE + "/api/titles/" + encodeURIComponent(id) + "/content?sort=asc&page=1");
+  const answer = await kino.fetch(BASE + "/api/titles/" + encodeURIComponent(id) + "/content?sort=asc&page=1", { headers: HEADERS });
   if (!answer.ok) return null;
-  const data = answer.json();
+  const data = JSON.parse(await body(answer));
   for (const season of data.seasons || []) {
     const items = season.items || [];
     if (items.length) return items[0].url || null;
@@ -228,10 +250,10 @@ export async function resolve(ref) {
     if (!first) throw kino.error("not_found", "sin episodios " + id);
     path = first;
   }
-  const answer = await kino.fetch(BASE + path);
+  const answer = await kino.fetch(BASE + path, { headers: HEADERS });
   if (answer.status === 404) throw kino.error("not_found", "watch 404");
   if (!answer.ok) throw kino.error("unavailable", "watch " + answer.status);
-  const data = json(answer.text(), "content-data");
+  const data = json(await body(answer), "content-data");
   const options = [];
   for (const category of (data && data.playback) || []) {
     for (const option of category.playback_options || []) options.push(option);
