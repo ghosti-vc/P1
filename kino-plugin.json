@@ -1,19 +1,13 @@
 {
-  "id": "peliskimera",
-  "name": "PelisKimera",
-  "description": "Películas y series de Kimera con audio separado (Latino / Inglés) automático.",
-  "version": "1.1.0",
+  "id": "kimera",
+  "name": "Kimera",
+  "version": "0.1.0",
   "apiVersion": 6,
   "entry": "plugin.js",
   "author": "ghosti-vc",
-  "homepage": "https://github.com/ghosti-vc/peliskimera",
-  "hosts": [
-    "kimeraweb.com",
-    "*.kimeraweb.com",
-    "cloudcdn.sbs",
-    "*.cloudcdn.sbs"
-  ],
-  "streamHosts": "any",
-  "capabilities": ["home", "search", "resolve"],
-  "color": "#00C2FF"
+  "description": "Películas y series de Kimera: estrenos, lo más visto y lo último agregado, con audio latino e inglés.",
+  "color": "#1c1f24",
+  "categories": ["movies", "series"],
+  "hosts": ["kimeraweb.com", "cloudcdn.sbs"],
+  "capabilities": ["home", "episodes", "resolve", "download"]
 }
