@@ -1440,14 +1440,17 @@ export async function resolve(ref) {
     extra.forEach((g) => { if (g.status === "fulfilled") cands = cands.concat(g.value); });
   }
   // Respaldo en paralelo: mientras se prueban estos servidores, se busca el mismo título en las demás fuentes.
+  // El respaldo ya no arranca de entrada: solo si tras la primera ronda aún no hay ganador (así no queda una búsqueda pendiente que alargue la espera).
   let backupP = null;
-  if (ttRef && !didBackup && left() > 8000) {
+  const canBackup = !!(ttRef && !didBackup);
+  const startBackup = () => {
+    if (backupP || !canBackup || left() < 6000) return;
     const kindB = ttRef.split(":")[2] === "m" ? "m" : "s";
     backupP = findMoreRefs(ttRef, refs, kindB, 5000)
       .then((more) => { log("resolve: respaldo, otras fuentes encontradas=" + more.length); return Promise.allSettled(more.map((r) => withTimeout(candidatesOf(r.slice(0, 2), r.slice(3)), 6000))); })
       .then((rs) => { const o = []; rs.forEach((g) => { if (g.status === "fulfilled") g.value.forEach((c) => o.push(c)); }); return o; })
       .catch(() => []);
-  }
+  };
   cands = cands.filter((c, i) => cands.findIndex((x) => x.url === c.url) === i);
   const useless = (c) => /dood|pinup|agl00\d\.com|playmogo|doodstream|mixdrop|susanexpect|nupload|netu|waaw|hqq/i.test(hostOf(c.url));
   const usable = cands.filter((c) => !useless(c));
@@ -1508,9 +1511,11 @@ export async function resolve(ref) {
       await kino.sleep(200);
     }
   };
-  let backupDone = !backupP;
+  let backupDone = !canBackup;
   const mergeBackup = async (ms) => {
     if (backupDone || ms < 300) return;
+    startBackup();
+    if (!backupP) { backupDone = true; return; }
     let extra;
     try { extra = await withTimeout(backupP, ms); } catch (e) { return; }
     backupDone = true;
@@ -1549,4 +1554,4 @@ export async function resolve(ref) {
   throw lastErr && lastErr.code ? lastErr : kino.error("unavailable", "ningún servidor entregó el video", {
     userMessage: tr("Ningún servidor de este título se pudo abrir desde aquí. Prueba otro título.", "No server for this title could be opened from here. Try another title."),
   });
-} 
+}
