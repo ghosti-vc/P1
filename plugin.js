@@ -1306,11 +1306,11 @@ export async function episodes(ref) {
   const okJob = (j) => j.done && j.value && j.value.episodes && j.value.episodes.length;
   const t0 = Date.now();
   let firstAt = 0;
-  while (Date.now() - t0 < 18000) {
+  while (Date.now() - t0 < 19000) {
     const pend = jobs.some((j) => !j.done) || searching;
     if (!pend) break;
     if (!firstAt && jobs.some(okJob)) firstAt = Date.now();
-    if (firstAt && Date.now() - firstAt > 2500) break;
+    if (firstAt && Date.now() - firstAt > (searching ? 9000 : 2500)) break;
     await kino.sleep(150);
   }
   const ok = jobs.filter(okJob);
