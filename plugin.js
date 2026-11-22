@@ -160,10 +160,36 @@ const ROWS = [
   { id: "episodios", title: "Últimos episodios", keys: ["ultimos episodios"] },
 ];
 
+async function page(path) {
+  const answer = await kino.fetch(BASE + path, { headers: HEADERS });
+  if (!answer.ok) throw kino.error("unavailable", path + " " + answer.status);
+  return await body(answer);
+}
+
+// Filas de una página de sección (/movies/, /series/): cada <h2> abre una fila.
+function rowsOf(html, prefix, wanted) {
+  const found = sections(html);
+  const out = [];
+  for (const row of wanted) {
+    const section = found.find((one) => row.keys.some((key) => one.head.includes(key)));
+    if (!section) continue;
+    const items = collect(section.body);
+    if (items.length) out.push({ id: prefix + row.id, title: (prefix ? row.prefix + " · " : "") + row.title, items });
+  }
+  return out;
+}
+
+const SECTION_ROWS = [
+  { id: "mes", title: "Populares del mes", keys: ["populares del mes"] },
+  { id: "estrenos", title: "Últimos estrenos", keys: ["ultimos estrenos"] },
+  { id: "agregados", title: "Últimos agregados", keys: ["ultimos titulos"] },
+  { id: "dia", title: "Populares del día", keys: ["populares del dia"] },
+];
+
 export async function home() {
-  const answer = await kino.fetch(BASE + "/", { headers: HEADERS });
-  if (!answer.ok) throw kino.error("unavailable", "inicio " + answer.status);
-  const html = await body(answer);
+  const [inicio, pelis, series] = await Promise.allSettled([page("/"), page("/movies/"), page("/series/")]);
+  if (inicio.status !== "fulfilled") throw inicio.reason;
+  const html = inicio.value;
   const found = sections(html);
   const rows = [];
   for (const row of ROWS) {
@@ -172,6 +198,12 @@ export async function home() {
     const items = collect(section.body);
     if (items.length) rows.push({ id: row.id, title: row.title, items });
   }
+  if (pelis.status === "fulfilled") {
+    for (const r of rowsOf(pelis.value, "m-", SECTION_ROWS.map((x) => ({ ...x, prefix: "Películas" })))) rows.push(r);
+  } else log("home: /movies/ falló");
+  if (series.status === "fulfilled") {
+    for (const r of rowsOf(series.value, "s-", SECTION_ROWS.map((x) => ({ ...x, prefix: "Series" })))) rows.push(r);
+  } else log("home: /series/ falló");
   if (!rows.length) {
     const items = collect(html);
     if (items.length) rows.push({ id: "todo", title: "Kimera", items });
@@ -180,7 +212,90 @@ export async function home() {
     const head = html.slice(0, 110).replace(/\s+/g, " ");
     throw kino.error("unavailable", "vacio len=" + html.length + " h2=" + found.length + " " + head);
   }
+  log("home: filas=" + rows.length);
   return rows;
+}
+
+// Catálogo: /catalog?q=&type=&tag=&sort=&page= trae las fichas dentro del JSON "catalog-initial-data".
+function catalogItems(html) {
+  const data = json(html, "catalog-initial-data");
+  const out = [];
+  if (data && Array.isArray(data.items)) {
+    for (const it of data.items) {
+      const url = String(it.title_url || "");
+      const m = /^\/([a-z]+)\/[^\/]+-(\d+)$/.exec(url);
+      if (!m) continue;
+      const series = AS_SERIES.has(m[1]);
+      out.push({
+        id: (series ? "s" : "m") + m[2],
+        ref: m[2] + "|" + url,
+        title: decode(it.name).slice(0, 200),
+        kind: series ? "series" : "movie",
+        poster: https(it.vertical_cover_url) || https(it.cover_url),
+      });
+    }
+    return { items: out, hasNext: !!data.has_next, pages: Number(data.pages) || 1 };
+  }
+  const items = collect(html);
+  return { items, hasNext: false, pages: 1 };
+}
+
+async function catalog(params, pageNo) {
+  const q = Object.keys(params).filter((k) => params[k] !== "" && params[k] != null).map((k) => k + "=" + encodeURIComponent(params[k]));
+  q.push("page=" + pageNo);
+  return catalogItems(await page("/catalog?" + q.join("&")));
+}
+
+export async function search(query) {
+  const q = String(query || "").trim();
+  if (!q) return [];
+  const first = await catalog({ q }, 1);
+  let items = first.items.slice();
+  if (first.pages > 1) {
+    const more = [];
+    for (let p = 2; p <= Math.min(first.pages, 4); p++) more.push(catalog({ q }, p).catch(() => ({ items: [] })));
+    for (const r of await Promise.all(more)) items = items.concat(r.items);
+  }
+  const seen = new Set();
+  items = items.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)));
+  log("búsqueda '" + q + "': " + items.length + " resultados");
+  return items;
+}
+
+// Secciones y géneros de "Explorar".
+const BROWSE = {
+  peliculas: { title: "Películas", params: { type: "movie" } },
+  series: { title: "Series", params: { type: "serie" } },
+  animes: { title: "Animes", params: { type: "anime" } },
+  dramas: { title: "Dramas", params: { type: "drama" } },
+  donghuas: { title: "Donghuas", params: { type: "donghua" } },
+  agregados: { title: "Últimos agregados", params: { sort: "added" } },
+  accion: { title: "Acción", params: { tag: 2 } },
+  aventura: { title: "Aventura", params: { tag: 4 } },
+  comedia: { title: "Comedia", params: { tag: 1 } },
+  drama: { title: "Drama", params: { tag: 11 } },
+  terror: { title: "Terror", params: { tag: 21 } },
+  ciencia: { title: "Ciencia ficción", params: { tag: 14 } },
+  animacion: { title: "Animación", params: { tag: 17 } },
+  romance: { title: "Romance", params: { tag: 3 } },
+  suspenso: { title: "Suspenso", params: { tag: 18 } },
+  crimen: { title: "Crimen", params: { tag: 15 } },
+  fantasia: { title: "Fantasía", params: { tag: 5 } },
+  familia: { title: "Familia", params: { tag: 13 } },
+};
+
+export async function browse(ref, cursor) {
+  const def = BROWSE[String(ref || "")];
+  if (!def) throw kino.error("not_found", "sección desconocida");
+  const n = Math.max(1, parseInt(cursor, 10) || 1);
+  const r = await catalog(def.params, n);
+  const out = { items: r.items };
+  if (r.hasNext && r.items.length) out.next = String(n + 1);
+  return out;
+}
+
+export async function categories() {
+  return Object.keys(BROWSE).map((id) => ({ id, title: BROWSE[id].title, ref: id }));
 }
 
 async function seriesInfo(id, path) {
@@ -241,14 +356,31 @@ async function firstEpisode(id) {
   return null;
 }
 
+// Solo para el registro: qué responde la lista HLS (estado, tipo y primeras letras).
+async function probe(name, url, headers) {
+  try {
+    const r = await kino.fetch(url, { headers });
+    let ct = "";
+    try { ct = r.headers && (typeof r.headers.get === "function" ? r.headers.get("content-type") : r.headers["content-type"]) || ""; } catch {}
+    const t = r.ok ? String(await r.text()) : "";
+    log("probe " + name + " status=" + r.status + " ct=" + ct + " bytes=" + t.length + " ini=" + t.slice(0, 60).replace(/\s+/g, " "));
+  } catch (e) {
+    log("probe " + name + " falló " + String((e && e.message) || e).slice(0, 60));
+  }
+}
+
 export async function resolve(ref) {
   let [id, path] = splitRef(ref);
   if (!id || !path.startsWith("/")) throw kino.error("not_found", "ref " + ref);
   // Una serie se abre por su primer episodio; un episodio ya trae su ruta de reproducción.
-  if (!path.includes("/watch/")) {
-    const first = await firstEpisode(id);
-    if (!first) throw kino.error("not_found", "sin episodios " + id);
-    path = first;
+  if (!path.includes("/watch")) {
+    if (/^\/movies\//.test(path)) {
+      path = path.replace(/\/+$/, "") + "/watch";
+    } else {
+      const first = await firstEpisode(id);
+      if (!first) throw kino.error("not_found", "sin episodios " + id);
+      path = first;
+    }
   }
   const answer = await kino.fetch(BASE + path, { headers: HEADERS });
   if (answer.status === 404) throw kino.error("not_found", "watch 404");
@@ -278,5 +410,8 @@ export async function resolve(ref) {
     subtitles.push({ lang: String(track.language_code || "und").slice(0, 16), url: trackUrl, format: "vtt" });
     if (subtitles.length >= 30) break;
   }
-  return { url, mime: "application/vnd.apple.mpegurl", audioTracks, subtitles };
+  const headers = { Referer: BASE + "/", Origin: BASE, "User-Agent": HEADERS["User-Agent"] };
+  await probe("video", url, headers);
+  if (audioTracks[0]) await probe("audio", audioTracks[0].url, headers);
+  return { url, mime: "application/vnd.apple.mpegurl", headers, audioTracks, subtitles };
 }
