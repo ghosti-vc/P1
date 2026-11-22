@@ -2,7 +2,7 @@
   "id": "mi-hls",
   "name": "Mi HLS",
   "description": "Reproductor de HLS: pega cualquier URL .m3u8 (audio, video y subtítulos por separado) o recíbelas de otros plugins.",
-  "version": "0.2.0",
+  "version": "0.2.5",
   "apiVersion": 20,
   "entry": "plugin.js",
   "author": "artuartic",
