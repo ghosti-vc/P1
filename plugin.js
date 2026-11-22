@@ -356,14 +356,55 @@ async function firstEpisode(id) {
   return null;
 }
 
-// Solo para el registro: qué responde la lista HLS (estado, tipo y primeras letras).
+// Solo para el registro: qué trae la lista HLS (etiquetas) y qué responden su inicialización, su llave y su primer segmento.
+function absUrl(base, ref) {
+  if (/^https?:\/\//i.test(ref)) return ref;
+  const origin = (/^(https?:\/\/[^\/]+)/i.exec(base) || [])[1] || "";
+  if (ref.startsWith("/")) return origin + ref;
+  return base.replace(/[?#].*$/, "").replace(/[^\/]*$/, "") + ref;
+}
+
+async function peek(label, url, headers) {
+  try {
+    const r = await kino.fetch(url, { headers: Object.assign({}, headers, { Range: "bytes=0-47" }) });
+    let ct = "";
+    let cl = "";
+    try {
+      const h = r.headers;
+      if (h) {
+        ct = (typeof h.get === "function" ? h.get("content-type") : h["content-type"]) || "";
+        cl = (typeof h.get === "function" ? h.get("content-length") : h["content-length"]) || "";
+      }
+    } catch {}
+    const t = String(await r.text());
+    let hex = "";
+    for (let i = 0; i < Math.min(t.length, 16); i++) hex += (t.charCodeAt(i) & 255).toString(16).padStart(2, "0") + " ";
+    log("probe " + label + " status=" + r.status + " ct=" + ct + " len=" + cl + " got=" + t.length + " hex=" + hex.trim() + " txt=" + t.slice(0, 24).replace(/[^\x20-\x7e]/g, "."));
+  } catch (e) {
+    log("probe " + label + " falló " + String((e && e.message) || e).slice(0, 60));
+  }
+}
+
 async function probe(name, url, headers) {
   try {
     const r = await kino.fetch(url, { headers });
-    let ct = "";
-    try { ct = r.headers && (typeof r.headers.get === "function" ? r.headers.get("content-type") : r.headers["content-type"]) || ""; } catch {}
     const t = r.ok ? String(await r.text()) : "";
-    log("probe " + name + " status=" + r.status + " ct=" + ct + " bytes=" + t.length + " ini=" + t.slice(0, 60).replace(/\s+/g, " "));
+    const lines = t.split(/\r?\n/);
+    const tags = {};
+    lines.forEach((l) => { const m = /^#(EXT-X-[A-Z-]+|EXTINF)/.exec(l); if (m) tags[m[1]] = (tags[m[1]] || 0) + 1; });
+    log("probe " + name + " status=" + r.status + " bytes=" + t.length + " etiquetas=" + Object.keys(tags).map((k) => k.replace("EXT-X-", "") + ":" + tags[k]).join(","));
+    log("probe " + name + " cabecera=" + lines.slice(0, 12).join(" | ").slice(0, 420));
+    const map = /#EXT-X-MAP:[^\n]*URI="([^"]+)"/.exec(t);
+    const key = /#EXT-X-KEY:([^\n]*)/.exec(t);
+    const seg = lines.find((l) => l && l[0] !== "#");
+    if (key) log("probe " + name + " llave=" + key[1].slice(0, 160));
+    if (map) await peek(name + " init", absUrl(url, map[1]), headers);
+    const kuri = key && /URI="([^"]+)"/.exec(key[1]);
+    if (kuri && !/^data:/i.test(kuri[1])) await peek(name + " key", absUrl(url, kuri[1]), headers);
+    if (seg) {
+      log("probe " + name + " segmento=" + seg.slice(0, 120));
+      await peek(name + " seg", absUrl(url, seg), headers);
+    }
   } catch (e) {
     log("probe " + name + " falló " + String((e && e.message) || e).slice(0, 60));
   }
