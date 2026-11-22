@@ -1266,7 +1266,8 @@ async function findMoreRefs(tt, refs, kind, ms) {
       const found = await searchAll(qa, ms);
       for (const it of found) {
         const src = it.ref.slice(0, 2);
-        if (have.has(src) || (it.kind === "movie") !== (kind === "m") || normTitle(it.title) !== want) continue;
+        if (have.has(src) || (it.kind === "movie") !== (kind === "m")) continue;
+        if (normTitle(it.title) !== want && loose(it.title) !== loose(title)) { log("otras fuentes: " + src + " no coincide '" + String(it.title).slice(0, 40) + "' con '" + title.slice(0, 40) + "'"); continue; }
         have.add(src);
         out.push(it.ref);
       }
@@ -1275,6 +1276,7 @@ async function findMoreRefs(tt, refs, kind, ms) {
   return out;
 }
 
+const loose = (t) => normTitle(String(t || "").replace(/\([^)]*\)|\[[^\]]*\]/g, " "));
 const epCache = new Map();
 
 export async function episodes(ref) {
