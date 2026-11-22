@@ -6,7 +6,7 @@ const BASE = "https://kimeraweb.com";
 const CDN = "https://cloudcdn.sbs";
 const TYPES = "movies|series|dramas|animes|donghuas|shorts";
 const AS_SERIES = new Set(["series", "dramas", "animes", "donghuas", "shorts"]);
-const CARD = new RegExp('<a href="https:\\/\\/kimeraweb\\.com\\/(' + TYPES + ')\\/([^"]+)"[^>]*>\\s*<img([^>]*)>', "g");
+const LINK = new RegExp('<a\\s[^>]*href="https:\\/\\/kimeraweb\\.com\\/(' + TYPES + ')\\/([^"]+)"', "gi");
 
 function log(...args) {
   try {
@@ -63,48 +63,75 @@ function splitRef(ref) {
   return [ref.slice(0, at), ref.slice(at + 1)];
 }
 
-// Un bloque de tarjetas del HTML: enlace a la ficha + su portada. El título va en el alt o,
-// cuando la tarjeta no lo trae, en el pie o en el enlace que la acompaña.
+// Cada enlace a una ficha es una tarjeta: su portada y su título se buscan en la ventana que
+// llega hasta el enlace siguiente, así que el orden del HTML no importa.
 function cards(html) {
   const out = [];
-  CARD.lastIndex = 0;
+  const links = [];
+  LINK.lastIndex = 0;
   let match;
-  while ((match = CARD.exec(html))) {
-    const type = match[1];
-    const path = match[2].split("/")[0];
+  while ((match = LINK.exec(html))) links.push({ type: match[1].toLowerCase(), full: match[2], end: match.index + match[0].length });
+  for (let i = 0; i < links.length; i++) {
+    const link = links[i];
+    const path = link.full.split("/")[0];
     const numbered = /(\d+)$/.exec(path);
     if (!numbered) continue;
-    const poster = https(attr(match[3], "data-src")) || https(attr(match[3], "src"));
-    let title = decode(attr(match[3], "alt"));
+    const stop = i + 1 < links.length ? links[i + 1].end : link.end + 2000;
+    const window = html.slice(link.end, Math.min(stop, link.end + 2000));
+    const wide = html.slice(link.end, Math.min(html.length, link.end + 2600));
+    const image = /<img([^>]*)>/i.exec(window);
+    let poster = image ? https(attr(image[1], "data-src")) || https(attr(image[1], "src")) : undefined;
+    if (!poster) {
+      const background = /url\((['"]?)(https:\/\/cloudcdn\.sbs\/[^)'"]+)\1\)/i.exec(window);
+      if (background) poster = https(background[2]);
+    }
+    let title = image ? decode(attr(image[1], "alt")) : "";
     if (!title) {
-      const after = html.slice(match.index + match[0].length, match.index + match[0].length + 900);
-      const caption = /<figcaption[^>]*>([\s\S]*?)<\/figcaption>/.exec(after);
-      const twin = new RegExp('<a href="[^"]*' + escapeRegExp(path) + '"[^>]*>([\\s\\S]{1,200}?)<\\/a>').exec(after);
-      title = caption ? text(caption[1]) : twin ? text(twin[1]) : "";
+      const caption = /<figcaption[^>]*>([\s\S]*?)<\/figcaption>/i.exec(wide);
+      if (caption) title = text(caption[1]);
+    }
+    if (!title) {
+      const twin = new RegExp('<a\\s[^>]*href="[^"]*' + escapeRegExp(path) + '"[^>]*>([\\s\\S]{1,200}?)<\\/a>', "i").exec(wide);
+      if (twin) title = text(twin[1]);
     }
     title = title.replace(/\s+/g, " ").trim().slice(0, 200);
     if (!title) continue;
-    const id = (AS_SERIES.has(type) ? "s" : "m") + numbered[1];
+    const id = (AS_SERIES.has(link.type) ? "s" : "m") + numbered[1];
     out.push({
       id,
-      ref: numbered[1] + "|/" + type + "/" + path,
+      ref: numbered[1] + "|/" + link.type + "/" + path,
       title,
-      kind: AS_SERIES.has(type) ? "series" : "movie",
+      kind: AS_SERIES.has(link.type) ? "series" : "movie",
       poster,
     });
   }
   return out;
 }
 
+function collect(html) {
+  const items = [];
+  const seen = new Set();
+  for (const card of cards(html)) {
+    if (seen.has(card.id)) continue;
+    seen.add(card.id);
+    items.push(card);
+    if (items.length >= 30) break;
+  }
+  return items;
+}
+
 function sections(html) {
   const marks = [];
-  const re = /<h2[^>]*>([\s\S]*?)<\/h2>/gi;
+  const re = /<h2\b[^>]*>/gi;
   let match;
-  while ((match = re.exec(html))) marks.push({ at: match.index + match[0].length, head: text(match[1]) });
-  return marks.map((mark, i) => ({
-    head: mark.head,
-    body: html.slice(mark.at, i + 1 < marks.length ? marks[i + 1].at : html.length),
-  }));
+  while ((match = re.exec(html))) marks.push(match.index + match[0].length);
+  const out = [];
+  for (let i = 0; i < marks.length; i++) {
+    const from = marks[i];
+    const to = i + 1 < marks.length ? marks[i + 1] : html.length;
+    out.push({ head: text(html.slice(from, Math.min(to, from + 300))), body: html.slice(from, to) });
+  }
+  return out;
 }
 
 const ROWS = [
@@ -123,15 +150,12 @@ export async function home() {
   for (const row of ROWS) {
     const section = found.find((one) => row.keys.some((key) => one.head.includes(key)));
     if (!section) continue;
-    const items = [];
-    const seen = new Set();
-    for (const card of cards(section.body)) {
-      if (seen.has(card.id)) continue;
-      seen.add(card.id);
-      items.push(card);
-      if (items.length >= 30) break;
-    }
+    const items = collect(section.body);
     if (items.length) rows.push({ id: row.id, title: row.title, items });
+  }
+  if (!rows.length) {
+    const items = collect(html);
+    if (items.length) rows.push({ id: "todo", title: "Kimera", items });
   }
   if (!rows.length) throw kino.error("unavailable", "inicio sin filas");
   return rows;
