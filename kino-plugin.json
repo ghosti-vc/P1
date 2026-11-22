@@ -1,30 +1,23 @@
 {
   "id": "mi-hls",
   "name": "Mi HLS",
+  "description": "Reproductor de HLS: pega cualquier URL .m3u8 (audio, video y subtítulos por separado) o recíbelas de otros plugins.",
   "version": "0.2.0",
   "apiVersion": 20,
-  "description": "Reproductor HLS: pega URLs m3u8 o recibe streams de otros plugins",
-  "provides": {
-    "player": {
-      "accepts": ["hls", "m3u8", "url.video"],
-      "entry": "onReceiveStream"
-    }
-  },
-  "consumes": {
-    "player": {
-      "contract": "kino.player.stream.v1"
-    }
-  },
-  "settings": [
+  "entry": "plugin.js",
+  "author": "artuartic",
+  "homepage": "https://github.com/artuartic/mi-hls",
+  "hosts": [],
+  "capabilities": ["search", "home", "resolve"],
+  "provides": [
     {
-      "key": "hlsUrl",
-      "type": "url",
-      "label": "URL HLS (.m3u8)"
-    },
-    {
-      "key": "subtitleUrl",
-      "type": "url",
-      "label": "Subtítulos (opcional)"
+      "capability": "player",
+      "action": "playHls",
+      "description": "Reproduce un stream HLS dado su manifest .m3u8"
     }
-  ]
+  ],
+  "consumes": [
+    { "capability": "player", "action": "playHls" }
+  ],
+  "color": "#F5B942"
 }
