@@ -1,30 +1,30 @@
 {
-  "id": "pelis-max",
-  "name": "PelisMAX",
-  "description": "Películas, series y anime en español (Latino primero) desde PelisGO, Reypelis, Pelis182, OnlyPelis y AllCalidad en un solo lugar.",
-  "author": "Ghosti-vc",
-  "version": "0.1.28",
-  "apiVersion": 9,
-  "entry": "plugin.js",
-  "capabilities": [
-    "home",
-    "browse",
-    "search",
-    "episodes",
-    "resolve"
-  ],
-  "hosts": [
-    "pelisgo.online",
-    "reypelis.net",
-    "pelis182.net",
-    "onlypelis.com",
-    "image.tmdb.org",
-    "paulinito.com",
-    "allcalidad.re",
-    "www.allcalidad.re"
-  ],
-  "browser": true,
-  "fetchHosts": "any",
-  "streamHosts": "any",
-  "resolveAhead": true
+  "id": "mi.hls",
+  "name": "Mi HLS",
+  "version": "0.2.0",
+  "apiVersion": 20,
+  "description": "Reproductor HLS: pega URLs m3u8 o recibe streams de otros plugins",
+  "provides": {
+    "player": {
+      "accepts": ["hls", "m3u8", "url.video"],
+      "entry": "onReceiveStream"
+    }
+  },
+  "consumes": {
+    "player": {
+      "contract": "kino.player.stream.v1"
+    }
+  },
+  "settings": [
+    {
+      "key": "hlsUrl",
+      "type": "url",
+      "label": "URL HLS (.m3u8)"
+    },
+    {
+      "key": "subtitleUrl",
+      "type": "url",
+      "label": "Subtítulos (opcional)"
+    }
+  ]
 }
