@@ -1,9 +1,9 @@
 {
-  "id": "pelis-tv",
-  "name": "PelisTV",
-  "description": "Películas, series, anime y series turcas en español desde muchas fuentes.",
+  "id": "pelis-max",
+  "name": "PelisMAX",
+  "description": "Películas, series y anime en español (Latino primero) desde PelisGO, Reypelis, Pelis182, OnlyPelis y AllCalidad en un solo lugar.",
   "author": "Ghosti-vc",
-  "version": "0.8.2",
+  "version": "0.1.21",
   "apiVersion": 9,
   "entry": "plugin.js",
   "capabilities": [
@@ -14,20 +14,14 @@
     "resolve"
   ],
   "hosts": [
-    "pelisjuanita.org",
-    "www.pelisjuanita.org",
-    "hackstore3.net",
-    "pelisflix200.store",
+    "pelisgo.online",
+    "reypelis.net",
+    "pelis182.net",
+    "onlypelis.com",
     "image.tmdb.org",
-    "www.poseidonhd2.co",
-    "player.poseidonhd2.co",
-    "wv3.cuevana3.eu",
-    "www.pelisplushd.la",
-    "www.cinecalidad.am",
-    "www3.seriesmetro.net",
-    "tbg.seriesturcastv.to",
-    "seriesflixhd.lol",
-    "pelisflixhd.win"
+    "paulinito.com",
+    "allcalidad.re",
+    "www.allcalidad.re"
   ],
   "browser": true,
   "fetchHosts": "any",
