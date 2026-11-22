@@ -1,7 +1,7 @@
 {
   "id": "kimera",
   "name": "Kimera",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "apiVersion": 6,
   "entry": "plugin.js",
   "author": "ghosti-vc",
