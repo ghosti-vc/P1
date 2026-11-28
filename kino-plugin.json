@@ -3,13 +3,14 @@
   "name": "Pelisjuanita TV",
   "description": "Canales de TV en vivo de Pelisjuanita, gratis y sin cuenta.",
   "author": "ghosti-vc",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "apiVersion": 24,
   "entry": "plugin.js",
   "icon": "icon.png",
-  "capabilities": ["home", "resolve", "channels", "drm"],
+  "capabilities": ["home", "search", "resolve", "channels", "drm"],
   "browser": true,
-  "hosts": ["pelisjuanita.com", "cdn.cvattv.com.ar", "cdn.ftvhd.com"],
+  "hosts": ["pelisjuanita.com"],
+  "fetchHosts": "any",
   "streamHosts": "any",
   "liveStreamHosts": "any"
 }
