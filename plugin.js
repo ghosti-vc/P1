@@ -5,11 +5,12 @@ const BASE = "https://pelisjuanita.com/tv/app";
 const CERT = "9381e4d77c1d42a3d02472331249bed8e76a8df6af7082214ea8fcfc30aa653d";
 const PKG  = "com.pelisjuanita.app";
 const UA   = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36";
-const REFERER = "https://localhost/";
-const HDR = { "User-Agent": UA, Referer: REFERER, Accept: "application/json" };
+const HDR  = { "User-Agent": UA, Accept: "application/json" };
 const CACHE_KEY = "canales";
 const CACHE_MS = 10 * 60 * 1000;
 const SEED_TTL = 3600000;
+const RUTAS = ["canales_json.php", "canales.php", "canales.json"];
+const REFS  = ["https://pelisjuanita.com/", "https://localhost/"];
 
 function enc(v) { return encodeURIComponent(String(v)); }
 
@@ -72,42 +73,60 @@ function limpio(c) {
   };
 }
 
-async function pedirCanales() {
-  const variantes = [true, false];
-  let ultimo = "sin respuesta";
-  for (const conToken of variantes) {
-    let url = BASE + "/canales_json.php?";
-    url += conToken ? await token() : "app_version=8";
-    let r = null;
-    try {
-      r = await kino.fetch(url, { headers: HDR, timeoutMs: 15000 });
-    } catch (e) {
-      ultimo = "red";
-      continue;
-    }
-    if (r.status === 403) {
-      await kino.storage.set("seed", "");
-      await kino.storage.set("seed_at", "0");
-      ultimo = "403";
-      continue;
-    }
-    if (!r.ok) {
-      ultimo = "status " + r.status;
-      continue;
-    }
-    const texto = r.text();
-    kino.log("canales crudo " + String(texto).length + " bytes");
-    let j = null;
-    try { j = JSON.parse(texto); } catch (e) {
-      ultimo = "no json";
-      continue;
-    }
-    if (Array.isArray(j)) return j;
-    if (j && Array.isArray(j.canales)) return j.canales;
-    if (j && Array.isArray(j.datos)) return j.datos;
-    ultimo = "sin lista";
+function parsear(texto) {
+  let j = null;
+  try { j = JSON.parse(texto); } catch (e) { return null; }
+  if (Array.isArray(j)) return j;
+  if (j && Array.isArray(j.canales)) return j.canales;
+  if (j && Array.isArray(j.datos)) return j.datos;
+  if (j && typeof j === "object") {
+    const out = [];
+    for (const k in j) if (Array.isArray(j[k])) out.push.apply(out, j[k]);
+    if (out.length) return out;
   }
-  throw kino.error("unavailable", "canales " + ultimo, {
+  return null;
+}
+
+async function probar(ruta, ref, conToken) {
+  const sep = ruta.indexOf("?") >= 0 ? "&" : "?";
+  const url = BASE + "/" + ruta + sep + (conToken ? await token() : "app_version=8");
+  let r = null;
+  try {
+    r = await kino.fetch(url, {
+      headers: { "User-Agent": UA, Referer: ref, Accept: "application/json" },
+      timeoutMs: 10000
+    });
+  } catch (e) {
+    kino.log("prueba " + ruta + " " + ref + (conToken ? " tok" : " sin") + " -> red");
+    return null;
+  }
+  const texto = r.text();
+  const ini = String(texto).replace(/\s+/g, " ").slice(0, 120);
+  kino.log("prueba " + ruta + " " + ref + (conToken ? " tok" : " sin") + " -> " + r.status + " " + String(texto).length + " " + ini);
+  if (r.status === 403) {
+    await kino.storage.set("seed", "");
+    await kino.storage.set("seed_at", "0");
+  }
+  if (!r.ok) return null;
+  const lista = parsear(texto);
+  if (!lista || !lista.length) return null;
+  kino.log("sirve " + ruta + " ref=" + ref + " token=" + (conToken ? "si" : "no"));
+  return lista;
+}
+
+async function pedirCanales() {
+  const limite = Date.now() + 16000;
+  for (const ref of REFS) {
+    for (const ruta of RUTAS) {
+      if (Date.now() > limite) break;
+      const a = await probar(ruta, ref, true);
+      if (a) return a;
+      if (Date.now() > limite) break;
+      const b = await probar(ruta, ref, false);
+      if (b) return b;
+    }
+  }
+  throw kino.error("unavailable", "canales", {
     userMessage: "La lista de canales no responde ahora. Prueba de nuevo en un rato."
   });
 }
@@ -141,7 +160,7 @@ function enLinea(x) {
   const s = { url: x.url, label: "Directo" };
   s.mime = x.url.includes(".m3u8") ? "application/vnd.apple.mpegurl" : "application/dash+xml";
   if (x.drm) s.drm = x.drm;
-  s.headers = { "User-Agent": UA, Referer: REFERER };
+  s.headers = { "User-Agent": UA, Referer: "https://pelisjuanita.com/" };
   return s;
 }
 
@@ -176,7 +195,7 @@ export async function liveCategories() {
 export async function liveChannels(arg) {
   await kino.sleep(0);
   const categoryId = (arg && arg.categoryId) || "";
-  const grupo = categoryId.startsWith("cat:") ? decodeURIComponent(categoryId.slice(4)) : "";
+  const grupo = categoryId.indexOf("cat:") === 0 ? decodeURIComponent(categoryId.slice(4)) : "";
   const lista = await traerCanales();
   const items = [];
   let num = 1;
@@ -231,7 +250,7 @@ export async function resolve(ref) {
     userMessage: "Ese canal ya no está en la lista."
   });
 
-  const cabeceras = { "User-Agent": UA, Referer: REFERER };
+  const cabeceras = { "User-Agent": UA, Referer: "https://pelisjuanita.com/" };
 
   if (x.url) {
     if (x.url.includes(".m3u8")) return { url: x.url, mime: "application/vnd.apple.mpegurl", headers: cabeceras };
@@ -253,7 +272,7 @@ export async function resolve(ref) {
   const destino = x.embed.startsWith("http") ? x.embed : BASE + "/" + x.embed.replace(/^\/+/, "");
   try {
     const cap = await kino.browser.capture(destino, {
-      headers: { "User-Agent": UA, Referer: REFERER },
+      headers: cabeceras,
       timeoutMs: 20000
     });
     const media = (cap && (cap.media || cap.urls)) || [];
