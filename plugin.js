@@ -12,6 +12,8 @@ const SEED_TTL = 3600000;
 const RUTAS = ["canales_json.php", "canales.php", "canales.json"];
 const REFS  = ["https://pelisjuanita.com/", "https://localhost/"];
 
+let diag = [];
+
 function enc(v) { return encodeURIComponent(String(v)); }
 
 /* ---------- token ---------- */
@@ -27,7 +29,9 @@ async function seed() {
       const j = r.json();
       if (j && j.sec_seed) s = String(j.sec_seed);
     }
-  } catch (e) {}
+  } catch (e) {
+    diag.push("version.php red");
+  }
   await kino.storage.set("seed", s);
   await kino.storage.set("seed_at", String(Date.now()));
   return s;
@@ -89,7 +93,11 @@ function parsear(texto) {
 
 async function probar(ruta, ref, conToken) {
   const sep = ruta.indexOf("?") >= 0 ? "&" : "?";
-  const url = BASE + "/" + ruta + sep + (conToken ? await token() : "app_version=8");
+  let cola = "app_version=8";
+  if (conToken) {
+    try { cola = await token(); } catch (e) { diag.push("token falla"); }
+  }
+  const url = BASE + "/" + ruta + sep + cola;
   let r = null;
   try {
     r = await kino.fetch(url, {
@@ -97,12 +105,14 @@ async function probar(ruta, ref, conToken) {
       timeoutMs: 10000
     });
   } catch (e) {
-    kino.log("prueba " + ruta + " " + ref + (conToken ? " tok" : " sin") + " -> red");
+    diag.push(ruta + (conToken ? " tok" : " sin") + " red");
+    kino.log("prueba " + ruta + " red");
     return null;
   }
   const texto = r.text();
-  const ini = String(texto).replace(/\s+/g, " ").slice(0, 120);
-  kino.log("prueba " + ruta + " " + ref + (conToken ? " tok" : " sin") + " -> " + r.status + " " + String(texto).length + " " + ini);
+  const ini = String(texto).replace(/\s+/g, " ").slice(0, 90);
+  diag.push(ruta + (conToken ? " tok" : " sin") + " " + r.status + " " + String(texto).length + " " + ini);
+  kino.log("prueba " + ruta + (conToken ? " tok" : " sin") + " -> " + r.status + " " + ini);
   if (r.status === 403) {
     await kino.storage.set("seed", "");
     await kino.storage.set("seed_at", "0");
@@ -110,25 +120,24 @@ async function probar(ruta, ref, conToken) {
   if (!r.ok) return null;
   const lista = parsear(texto);
   if (!lista || !lista.length) return null;
-  kino.log("sirve " + ruta + " ref=" + ref + " token=" + (conToken ? "si" : "no"));
+  diag.push("sirve " + ruta);
   return lista;
 }
 
 async function pedirCanales() {
+  diag = [];
   const limite = Date.now() + 16000;
   for (const ref of REFS) {
     for (const ruta of RUTAS) {
-      if (Date.now() > limite) break;
+      if (Date.now() > limite) { diag.push("tiempo agotado"); return null; }
       const a = await probar(ruta, ref, true);
       if (a) return a;
-      if (Date.now() > limite) break;
+      if (Date.now() > limite) { diag.push("tiempo agotado"); return null; }
       const b = await probar(ruta, ref, false);
       if (b) return b;
     }
   }
-  throw kino.error("unavailable", "canales", {
-    userMessage: "La lista de canales no responde ahora. Prueba de nuevo en un rato."
-  });
+  return null;
 }
 
 async function traerCanales() {
@@ -140,17 +149,25 @@ async function traerCanales() {
     } catch (e) {}
   }
   const crudos = await pedirCanales();
+  if (!crudos) {
+    diag.push("ninguna ruta respondio lista");
+    throw kino.error("unavailable", "canales", {
+      userMessage: "La lista de canales no responde ahora. Prueba de nuevo en un rato."
+    });
+  }
   const lista = [];
   for (const c of crudos) {
     const x = limpio(c);
     if (x) lista.push(x);
   }
   if (!lista.length) {
+    diag.push("json con " + crudos.length + " y 0 utiles");
+    diag.push("campos: " + Object.keys(crudos[0] || {}).join(","));
     throw kino.error("not_found", "canales vacio", {
-      userMessage: "No hay canales disponibles en este momento."
+      userMessage: "La lista llego con otro formato. Revisa el diagnostico."
     });
   }
-  kino.log("canales utiles " + lista.length);
+  diag.push("utiles " + lista.length);
   try { await kino.storage.set(CACHE_KEY, JSON.stringify({ t: Date.now(), lista })); } catch (e) {}
   return lista;
 }
@@ -174,11 +191,25 @@ function itemDe(x, numero, categoryId) {
   return it;
 }
 
+function diagItems() {
+  const out = [];
+  let n = 1;
+  for (const d of diag) {
+    out.push({ kind: "live", id: "diag:" + n, number: n, title: String(d).slice(0, 110), genre: "live" });
+    n++;
+    if (n > 14) break;
+  }
+  if (!out.length) out.push({ kind: "live", id: "diag:0", number: 1, title: "sin intentos", genre: "live" });
+  return out;
+}
+
 /* ---------- catálogo ---------- */
 
 export async function liveCategories() {
   await kino.sleep(0);
-  const lista = await traerCanales();
+  let lista = [];
+  try { lista = await traerCanales(); }
+  catch (e) { return [{ id: "cat:diag", title: "PRUEBA", genre: "live" }]; }
   const cuenta = new Map();
   for (const x of lista) {
     const g = x.categoria || "General";
@@ -195,8 +226,16 @@ export async function liveCategories() {
 export async function liveChannels(arg) {
   await kino.sleep(0);
   const categoryId = (arg && arg.categoryId) || "";
+  if (categoryId === "cat:diag") {
+    if (!diag.length) {
+      try { await traerCanales(); } catch (e) {}
+    }
+    return { items: diagItems() };
+  }
+  let lista = [];
+  try { lista = await traerCanales(); }
+  catch (e) { return { items: diagItems() }; }
   const grupo = categoryId.indexOf("cat:") === 0 ? decodeURIComponent(categoryId.slice(4)) : "";
-  const lista = await traerCanales();
   const items = [];
   let num = 1;
   for (const x of lista) {
@@ -210,7 +249,11 @@ export async function liveChannels(arg) {
 
 export async function home() {
   await kino.sleep(0);
-  const lista = await traerCanales();
+  let lista = [];
+  try { lista = await traerCanales(); }
+  catch (e) {
+    return [{ id: "canales-diag", title: "PRUEBA", genre: "live", items: diagItems() }];
+  }
   const fila = [];
   let num = 1;
   for (const x of lista) {
@@ -226,7 +269,9 @@ export async function search(arg) {
   await kino.sleep(0);
   const t = String((arg && (arg.query || arg.q)) || arg || "").trim().toLowerCase();
   if (!t) return { items: [] };
-  const lista = await traerCanales();
+  let lista = [];
+  try { lista = await traerCanales(); }
+  catch (e) { return { items: diagItems() }; }
   const items = [];
   for (const x of lista) {
     if (x.nombre.toLowerCase().indexOf(t) < 0) continue;
@@ -299,7 +344,7 @@ export async function resolve(ref) {
       userMessage: "El canal " + x.nombre + " pide confirmar que eres humano. Prueba otro."
     });
     if (cod === "timeout" || cod === "busy") throw kino.error("unavailable", cod, {
-      userMessage: "El canal " + x.nombre + " tardó demasiado. Prueba otro."
+      userMessage: "El canal " + x.nombre + " tardo demasiado. Prueba otro."
     });
     if (cod) throw e;
     throw kino.error("unavailable", "embed", {
