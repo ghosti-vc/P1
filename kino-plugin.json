@@ -1,13 +1,15 @@
 {
-  "id": "kimera",
-  "name": "Kimera",
-  "version": "0.1.28",
-  "apiVersion": 6,
-  "entry": "plugin.js",
+  "id": "pelisjuanita-canales",
+  "name": "Pelisjuanita TV",
+  "description": "Canales de TV en vivo de Pelisjuanita, gratis y sin cuenta.",
   "author": "ghosti-vc",
-  "description": "Películas y series de Kimera: estrenos, lo más visto y lo último agregado, con audio latino e inglés.",
-  "color": "#1c1f24",
-  "categories": ["movies", "series"],
-  "hosts": ["kimeraweb.com", "cloudcdn.sbs"],
-  "capabilities": ["home", "browse", "search", "episodes", "resolve", "download"]
+  "version": "1.0.0",
+  "apiVersion": 24,
+  "entry": "plugin.js",
+  "icon": "icon.png",
+  "capabilities": ["home", "resolve", "channels", "drm"],
+  "browser": true,
+  "hosts": ["pelisjuanita.com", "cdn.cvattv.com.ar", "cdn.ftvhd.com"],
+  "streamHosts": "any",
+  "liveStreamHosts": "any"
 }
